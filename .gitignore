@@ -1,0 +1,5 @@
+./build
+./results
+./streamlit_app/analysis_results/
+./streamlit_app/results/
+./streamlit_app/analysis_results/

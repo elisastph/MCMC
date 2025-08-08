@@ -1,0 +1,37 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake g++ python3 python3-pip
+        python3 -m pip install --upgrade pip
+        pip3 install pybind11 pytest numpy
+
+    - name: Build C++ Code + Python Bindings
+      run: |
+        mkdir -p build
+        cd build
+        cmake ..
+        make
+
+    - name: Move Python Modules
+      run: |
+        cp build/*.so .
+
+    - name: Run Python Tests
+      run: |
+        pytest tests/
