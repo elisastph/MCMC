@@ -1,7 +1,54 @@
 import streamlit as st
 import subprocess
-from analysis.visualize_lattices import generate_and_display_lattice_animations
 import os
+import shutil
+import numpy as np
+from sqlalchemy import text
+from dotenv import load_dotenv
+import streamlit as st
+from infos import render_models_intro, render_analysis_intro, render_gif_snippet, render_plot_snippet
+import os, subprocess, pathlib
+
+from mcmc_tools.db import get_engine, get_session, healthcheck
+from mcmc_tools.db.etl import import_all_from_results_folder
+
+from mcmc_tools.analysis_utils.visualize_lattices import (
+    load_lattices_for_model_and_temperature,
+    generate_and_display_lattice_animations,
+)
+from mcmc_tools.analysis_utils.stat_runner import analyze_and_store_latest_statistics
+from mcmc_tools.analysis_utils.plots import plot_with_errorbars
+
+load_dotenv()
+
+
+def ensure_mcmc_binary():
+    build_dir = pathlib.Path("build")
+    exe = build_dir / "mcmc"
+    if exe.exists():
+        return
+    build_dir.mkdir(exist_ok=True)
+    # Build only if missing
+    subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
+    subprocess.run(["make", "-j"], cwd=build_dir, check=True)
+
+ensure_mcmc_binary()
+
+@st.cache_resource
+def _engine_cached():
+    return get_engine()
+
+engine = _engine_cached()
+
+def get_available_temperatures_and_models():
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT DISTINCT model, temperature
+            FROM simulations
+            ORDER BY model, temperature
+        """)).fetchall()
+    return result
+
 # ---- Helper: räumt alles weg, was rechts angezeigt wird ----
 def reset_display_flags():
     for flag in [
@@ -42,17 +89,18 @@ steps = st.sidebar.number_input(
 )
 
 temp_range = st.sidebar.slider(
-    "Temperature", 0.1, 5.0, (0.5,3.5), step=0.25,
+    "Temperature", 0.1, 5.0, (0.5,3.5), step=0.1,
     key="temp_range",
     on_change=reset_display_flags
 )
 
 temp_step = st.sidebar.selectbox(
-    "Temperature steps", [0.05,0.1,0.25,0.5],
+    "Temperature steps", [0.1,0.25,0.5,0.75,1.0],
     index=2,
     key="temp_step",
     on_change=reset_display_flags
 )
+temp_step_val = st.session_state["temp_step"]
 
 # ---- Initialisiere alle Session-Flags einmalig ----
 for flag in [
@@ -63,38 +111,40 @@ for flag in [
 ]:
     st.session_state.setdefault(flag, False)
 
-# ---- Button-Click: hier startet die Simulation in DIESEM Run ----
+if not st.session_state.get("simulation_started_once", False):
+    render_models_intro()
+
+# ---- Simulation starten ----
 if st.sidebar.button("🚀 Start Simulation"):
     st.session_state.simulation_started_once = True
     st.session_state.simulation_running = True
     st.session_state.simulation_analyse_once = False
 
-    # Setze Fortschritts-Flags zurück
     st.session_state.simulation_done = False
     st.session_state.show_sim_success = False
     st.session_state.simulation_progress_final = 0.0
 
-    # Anzeige: Simulation läuft
     st.subheader("🔄 Simulation is running...")
     progress_bar = st.progress(0)
 
-    # Laufzeit-Variables
-    total_tasks = len(models) * int((temp_range[1]-temp_range[0]) / temp_step + 1)
+    temperatures = np.arange(temp_range[0], temp_range[1] + temp_step_val / 2, temp_step_val)
+    temperatures = [round(T, 2) for T in temperatures]  # optional, damit gleiche Formatierung
+    total_tasks = len(models) * len(temperatures)
+
     current = 0
     success = True
-
-    # Simulation-Loop
-    T = temp_range[0]
-    while T <= temp_range[1] + 1e-6:
+    
+    for T in temperatures:
         for model in models:
             cmd = [
-                "../build/mcmc",
+                "build/mcmc",
                 "--model", model,
                 "--L", str(L),
                 "--T", f"{T:.2f}",
                 "--steps", str(steps)
             ]
             try:
+                print(T, model)
                 subprocess.run(cmd, check=True, capture_output=True, text=True)
             except subprocess.CalledProcessError as e:
                 st.error(f"❌ Error for {model}, T={T:.2f}: {e.stderr.strip()}")
@@ -104,40 +154,28 @@ if st.sidebar.button("🚀 Start Simulation"):
             frac = current / total_tasks
             progress_bar.progress(frac)
             st.session_state.simulation_progress_final = frac
-        T = round(T + temp_step, 2)
 
-    # Simulation beendet
     st.session_state.simulation_running = False
     st.session_state.simulation_done = True
     st.session_state.show_sim_success = success
 
-# ---- Hinweis anzeigen, wenn noch keine Simulation gestartet wurde oder Parameter geändert wurden ----
-if not st.session_state.simulation_started_once and not st.session_state.simulation_running:
-    st.info("▶️ Run a simulation to get lattice configurations and animations.")
+    # ---- Neue Ergebnisse in DB importieren ----
+    n_simulations = len(models) * len(temperatures)
+    import_all_from_results_folder(
+        folder="results",
+        models=models,
+        L=L,
+        temperatures=temperatures,   
+    )
+    analyze_and_store_latest_statistics(n_simulations)      
 
-# # ---- Main-Rendering nur, wenn simulation_done True ----
-# if st.session_state.simulation_done:
-#     if st.session_state.show_sim_success:
-#         st.success("✅ All Simulations done!")
-#     else:
-#         st.warning("⚠️ Simulation teilweise fehlgeschlagen.")
+    st.success("✅ Simulation, Import & Statistics done")
 
-# ---- Main-Rendering nur, wenn simulation_done True ----
+# ---- Analysebereich ----
 if st.session_state.simulation_done:
-    if st.session_state.simulation_analyse_once:
-        st.subheader("🔄 Simulation is running2...")
-        st.progress(1.0)
+    render_analysis_intro()  
 
-    st.session_state.simulation_analyse_once = True
-
-    if st.session_state.show_sim_success:
-        st.success("✅ All Simulations done!")
-    else:
-        st.warning("⚠️ Simulation teilweise fehlgeschlagen.")
-
-    # ---- Analysis: Evolution at Fixed Temperature ----
     st.header("Analysis: Evolution at Fixed Temperature")
-    # Parameter für Analyse
     analysis_models = st.multiselect(
         "Select Model(s)", models,
         default=[models[0]] if models else [],
@@ -153,19 +191,21 @@ if st.session_state.simulation_done:
 
     output_dir = "analysis_results/visualize_lattice"
     os.makedirs(output_dir, exist_ok=True)
+        
     display_width = 500
+    render_gif_snippet()
     if st.button("Show Evolution GIFs", key="analysis_button"):
         if analysis_models:
-            cols = st.columns(len(analysis_models))
-            for col, model in zip(cols, analysis_models):
-                with col:
-                    # rufe deine Funktion für genau dieses eine Modell auf
-                    generate_and_display_lattice_animations(
-                        models_selected=[model],
-                        T_target=T_analysis,
-                        output_dir=output_dir,
-                        display_width=display_width
-                    )
+            generate_and_display_lattice_animations(
+                analysis_models, T_analysis, output_dir, display_width=display_width
+            )
         else:
             st.warning("Please select at least one model for analysis.")
 
+    # Temperaturen aus aktuellem Simulation-Setup
+    temperatures = np.arange(temp_range[0], temp_range[1] + temp_step_val / 2, temp_step_val)
+    temperatures = [round(float(T), 2) for T in temperatures]
+   
+    render_plot_snippet()
+    if st.button("Generate Plots with Errorbars"):
+        plot_with_errorbars(analysis_models, L, steps, temperatures)

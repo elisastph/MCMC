@@ -1,5 +1,11 @@
-./build
-./results
-./streamlit_app/analysis_results/
-./streamlit_app/results/
-./streamlit_app/analysis_results/
+build/
+.DS_Store
+.venv
+.env
+results/
+*.so
+*.egg-info
+.pytest*
+save_for_later
+__pycache__/
+analysis_results/

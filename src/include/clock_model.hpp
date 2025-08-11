@@ -16,6 +16,7 @@ public:
     void set_forced_state(int s) { forced_state = s; };
     void set_forced_random(double r) { forced_random = r; };
     bool metropolis_update_deterministic(int i, int j);
+    void metropolis_sweep();     
 
     
 private:

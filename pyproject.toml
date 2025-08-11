@@ -1,3 +1,26 @@
+[project]
+name = "mcmc_tools"
+version = "0.1.0"
+description = "Python tooling for MCMC project (DB, analysis, CLI)"
+requires-python = ">=3.9"
+dependencies = [
+  "SQLAlchemy>=2.0",
+  "python-dotenv>=1.0",
+  "psycopg2-binary; platform_system != 'Windows'",
+  "pandas",
+  "numpy",
+  "plotly",
+  "streamlit",           
+  'psycopg2-binary==2.9.9; platform_system != "Windows"'
+]
+
+[project.optional-dependencies]
+app = []                  # leer lassen oder entfernen – App hängt schon oben dran
+test = ["pytest", "pybind11", "cmake"]
+
 [build-system]
-requires = ["setuptools", "wheel", "pybind11", "scikit-build", "cmake"]
+requires = ["setuptools>=68", "wheel", "pybind11", "cmake"]  # scikit-build brauchst du nur mit CMake-Projektstruktur
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mcmc_tools*"]

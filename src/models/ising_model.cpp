@@ -42,6 +42,13 @@ void IsingModel::metropolis_update() {
     }
 }
 
+void IsingModel::metropolis_sweep() {
+    // Führe N = L*L Metropolis-Versuche durch → 1 Sweep
+    for (int n = 0; n < L * L; ++n) {
+        metropolis_update();
+    }
+}
+
 double IsingModel::compute_energy() const {
     double energy = 0.0;
     for (int i = 0; i < L; ++i) {
@@ -122,3 +129,4 @@ bool IsingModel::metropolis_update(int i, int j) {
     }
     return false;
 }
+

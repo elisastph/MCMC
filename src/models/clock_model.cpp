@@ -73,6 +73,12 @@ double ClockModel::compute_energy() const {
     return energy;
 }
 
+void ClockModel::metropolis_sweep() {
+    for (int n = 0; n < L*L; ++n) {
+        metropolis_update();
+    }
+}
+
 double ClockModel::compute_magnetization() const {
     double mx = 0.0, my = 0.0;
     for (int i = 0; i < L; ++i) {
@@ -82,8 +88,7 @@ double ClockModel::compute_magnetization() const {
             my += std::sin(angle);
         }
     }
-    int N = L * L;
-    return std::sqrt(mx * mx + my * my)/N;
+    return std::sqrt(mx*mx + my*my);  // <-- no /N
 }
 
 void ClockModel::save_lattice(const std::string& filename) const {

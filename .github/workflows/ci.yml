@@ -11,27 +11,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Install Dependencies
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install system deps
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake g++ python3 python3-pip
-        python3 -m pip install --upgrade pip
-        pip3 install pybind11 pytest numpy
+        sudo apt-get install -y cmake g++ make
 
-    - name: Build C++ Code + Python Bindings
+    - name: Install Python deps
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # if you don’t have a requirements.txt yet, fallback:
+        # pip install streamlit numpy pandas sqlalchemy psycopg2-binary python-dotenv plotly imageio pytest
+
+    - name: Build C++ (cmake)
       run: |
         mkdir -p build
         cd build
         cmake ..
-        make
+        make -j
 
-    - name: Move Python Modules
+    - name: Run Python tests
+      env:
+        DATABASE_URL: sqlite:///test_ci.db
       run: |
-        cp build/*.so .
-
-    - name: Run Python Tests
-      run: |
-        pytest tests/
+        pytest -q --maxfail=1

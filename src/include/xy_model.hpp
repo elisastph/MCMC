@@ -15,8 +15,9 @@ public:
     void set_lattice(const std::vector<std::vector<double>>& new_lattice);
     void set_forced_angle(double angle);
     void set_forced_random(double value);
-    bool metropolis_update(int i, int j);  // expliziter Update an fester Stelle
-    
+    bool metropolis_update(int i, int j);  
+    void metropolis_sweep();   
+
 private:
     double forced_angle = -1.0;
     double forced_random = -1.0;

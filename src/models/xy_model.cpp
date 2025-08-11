@@ -68,17 +68,25 @@ double XYModel::compute_energy() const {
     return energy;
 }
 
+void XYModel::metropolis_sweep() {
+    for (int n = 0; n < L*L; ++n) {
+        metropolis_update();
+    }
+}
+
+// Ensure TOTAL |M| (no /N)
 double XYModel::compute_magnetization() const {
     double mx = 0.0, my = 0.0;
     for (int i = 0; i < L; ++i) {
         for (int j = 0; j < L; ++j) {
-            mx += std::cos(lattice[i][j]);
-            my += std::sin(lattice[i][j]);
+            double angle = lattice[i][j]; // or however you store θ ∈ [0,2π)
+            mx += std::cos(angle);
+            my += std::sin(angle);
         }
     }
-    int N = L * L;
-    return std::sqrt(mx * mx + my * my) / N;
+    return std::sqrt(mx*mx + my*my);  // <-- no /N
 }
+
 
 void XYModel::save_lattice(const std::string& filename) const {
     std::ofstream file(filename);

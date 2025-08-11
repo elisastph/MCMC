@@ -16,7 +16,7 @@ public:
     void set_seed(unsigned int seed);
     bool metropolis_update(int i, int j);
     void set_forced_random(double r);
-
+    void metropolis_sweep();  
 
 private:
     int L;                                 // Lattice size (LxL)
