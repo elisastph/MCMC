@@ -7,6 +7,7 @@ from sqlalchemy import text
 from dotenv import load_dotenv
 from infos import render_models_intro, render_analysis_intro, render_gif_snippet, render_plot_snippet
 import os, subprocess, pathlib
+from mcmc_tools.db.models import Base  # enthält Simulation, Result, Lattice, Statistic
 
 from mcmc_tools.db import get_engine, get_session, healthcheck
 from mcmc_tools.db.etl import import_all_from_results_folder
@@ -40,12 +41,25 @@ def ensure_mcmc_binary():
     subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
     subprocess.run(["make", "-j"], cwd=build_dir, check=True)
 
+def ensure_schema():
+    eng = engine
+    insp = inspect(eng)
+    want = {"simulations","results","lattices","statistics"}
+    have = set(insp.get_table_names())
+    missing = sorted(want - have)
+    if missing:
+        Base.metadata.create_all(eng)
+    return missing
 
 @st.cache_resource
 def _engine_cached():
     return get_engine()
 
 engine = _engine_cached()
+if os.getenv("INIT_DB", "0") in {"1","true","yes"}:
+    from mcmc_tools.db.models import Base
+    Base.metadata.create_all(engine)
+    
 from urllib.parse import urlparse
 u = urlparse(os.environ.get("DATABASE_URL", ""))
 st.caption(f"DB → host={u.hostname}, port={u.port}, db={u.path.lstrip('/')}, user={(u.username or '')[:6]}…")
@@ -243,3 +257,13 @@ with st.expander("🔧 Diagnostics", expanded=False):
         st.cache_data.clear()
         st.cache_resource.clear()
         st.rerun()
+
+    if st.button("Initialize DB schema (create tables)"):
+        try:
+            missing = ensure_schema()
+            if missing:
+                st.success(f"Created tables: {missing}")
+            else:
+                st.info("Schema already up-to-date ✔️")
+        except Exception as e:
+            st.error(f"Schema init failed: {e}")
