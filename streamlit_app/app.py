@@ -1,11 +1,10 @@
 import streamlit as st
-import subprocess
-import os
+st.set_page_config(page_title="MCMC Dashboard", layout="wide")
+
 import shutil
 import numpy as np
 from sqlalchemy import text
 from dotenv import load_dotenv
-import streamlit as st
 from infos import render_models_intro, render_analysis_intro, render_gif_snippet, render_plot_snippet
 import os, subprocess, pathlib
 
@@ -47,6 +46,9 @@ def _engine_cached():
     return get_engine()
 
 engine = _engine_cached()
+from urllib.parse import urlparse
+u = urlparse(os.environ.get("DATABASE_URL", ""))
+st.caption(f"DB → host={u.hostname}, port={u.port}, db={u.path.lstrip('/')}, user={(u.username or '')[:6]}…")
 
 def get_available_temperatures_and_models():
     with engine.connect() as conn:
@@ -73,7 +75,6 @@ def reset_display_flags():
         st.session_state[flag] = False
 
 # ---- Streamlit Konfig ----
-st.set_page_config(page_title="MCMC Dashboard", layout="wide")
 st.sidebar.title("⚙️ Simulation Settings")
 
 # ---- Sidebar mit on_change ----
