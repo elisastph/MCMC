@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools>=68", "wheel", "pybind11>=2.11", "cmake>=3.20"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mcmc-tools"                         # Distributionsname (Import bleibt mcmc_tools)
+name = "mcmc-tools"
 version = "0.1.0"
 description = "Python tooling for MCMC project (DB, analysis, CLI)"
 requires-python = ">=3.9"
@@ -14,11 +14,14 @@ dependencies = [
   "numpy>=1.23",
   "plotly>=5.0",
   "streamlit>=1.31",
-  'psycopg2-binary>=2.9; platform_system != "Windows"'   # nur non-Windows
+  'psycopg2-binary>=2.9; platform_system != "Windows"'
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pybind11", "cmake"]       # nur falls lokal gebraucht
+# Nur lokal verwenden, wenn du wirklich die C++-Bindings bauen willst:
+native = ["pybind11>=2.12", "cmake>=3.18"]
+dev = ["pytest>=7"]
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["mcmc_tools*"]

@@ -1,3 +1,9 @@
 -e .
-imageio
-pybind11
+
+streamlit>=1.31
+SQLAlchemy>=2.0
+python-dotenv>=1.0
+pandas>=2.0
+numpy>=1.23
+plotly>=5.0
+psycopg2-binary>=2.9
