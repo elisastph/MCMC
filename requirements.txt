@@ -7,3 +7,6 @@ pandas>=2.0
 numpy>=1.23
 plotly>=5.0
 psycopg2-binary>=2.9
+matplotlib>=3.9
+imageio>=2.34
+pillow>=10
