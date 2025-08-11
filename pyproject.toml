@@ -1,26 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "mcmc_tools"
+name = "mcmc-tools"                         # Distributionsname (Import bleibt mcmc_tools)
 version = "0.1.0"
 description = "Python tooling for MCMC project (DB, analysis, CLI)"
 requires-python = ">=3.9"
 dependencies = [
-  "SQLAlchemy>=2.0",
+  "sqlalchemy>=2.0",
   "python-dotenv>=1.0",
-  "psycopg2-binary; platform_system != 'Windows'",
-  "pandas",
-  "numpy",
-  "plotly",
-  "streamlit",           
-  'psycopg2-binary==2.9.9; platform_system != "Windows"'
+  "pandas>=2.0",
+  "numpy>=1.23",
+  "plotly>=5.0",
+  "streamlit>=1.31",
+  'psycopg2-binary>=2.9; platform_system != "Windows"'   # nur non-Windows
 ]
 
 [project.optional-dependencies]
-app = []                  # leer lassen oder entfernen – App hängt schon oben dran
-test = ["pytest", "pybind11", "cmake"]
-
-[build-system]
-requires = ["setuptools>=68", "wheel", "pybind11", "cmake"]  # scikit-build brauchst du nur mit CMake-Projektstruktur
-build-backend = "setuptools.build_meta"
+dev = ["pytest", "pybind11", "cmake"]       # nur falls lokal gebraucht
 
 [tool.setuptools.packages.find]
 include = ["mcmc_tools*"]
