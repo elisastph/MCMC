@@ -1,9 +1,8 @@
 import streamlit as st
 st.set_page_config(page_title="MCMC Dashboard", layout="wide")
-
+from sqlalchemy import text, inspect
 import shutil
 import numpy as np
-from sqlalchemy import text
 from dotenv import load_dotenv
 from infos import render_models_intro, render_analysis_intro, render_gif_snippet, render_plot_snippet
 import os, subprocess, pathlib
@@ -59,10 +58,10 @@ engine = _engine_cached()
 if os.getenv("INIT_DB", "0") in {"1","true","yes"}:
     from mcmc_tools.db.models import Base
     Base.metadata.create_all(engine)
-    
+
 from urllib.parse import urlparse
 u = urlparse(os.environ.get("DATABASE_URL", ""))
-st.caption(f"DB → host={u.hostname}, port={u.port}, db={u.path.lstrip('/')}, user={(u.username or '')[:6]}…")
+# st.caption(f"DB → host={u.hostname}, port={u.port}, db={u.path.lstrip('/')}, user={(u.username or '')[:6]}…")
 
 def get_available_temperatures_and_models():
     with engine.connect() as conn:
@@ -242,28 +241,34 @@ if st.session_state.simulation_done:
     if st.button("Generate Plots with Errorbars"):
         plot_with_errorbars(analysis_models, L, steps, temperatures)
 
-from mcmc_tools.db.models import Simulation
-with st.expander("🔧 Diagnostics", expanded=False):
-    st.write({"SAFE_MODE": os.getenv("SAFE_MODE", "0")})
-    st.write("DB:", "✅ OK" if healthcheck() else "❌ FAIL")
-    try:
-        with get_session() as s:
-            n_sim = s.query(Simulation).count()
-        st.write(f"Simulations in DB: {n_sim}")
-    except Exception as e:
-        st.write(f"DB query error: {e}")
+# from mcmc_tools.db.models import Simulation
+# with st.expander("🔧 Diagnostics", expanded=False):
+#     st.write({"SAFE_MODE": os.getenv("SAFE_MODE", "0")})
+#     st.write("DB:", "✅ OK" if healthcheck() else "❌ FAIL")
+#     try:
+#         with get_session() as s:
+#             n_sim = s.query(Simulation).count()
+#         st.write(f"Simulations in DB: {n_sim}")
+#     except Exception as e:
+#         st.write(f"DB query error: {e}")
 
-    if st.button("Clear cache & reload"):
-        st.cache_data.clear()
-        st.cache_resource.clear()
-        st.rerun()
+#     if st.button("Clear cache & reload"):
+#         st.cache_data.clear()
+#         st.cache_resource.clear()
+#         st.rerun()
 
-    if st.button("Initialize DB schema (create tables)"):
-        try:
-            missing = ensure_schema()
-            if missing:
-                st.success(f"Created tables: {missing}")
-            else:
-                st.info("Schema already up-to-date ✔️")
-        except Exception as e:
-            st.error(f"Schema init failed: {e}")
+#     if st.button("Initialize DB schema (create tables)"):
+#         try:
+#             missing = ensure_schema()
+#             if missing:
+#                 st.success(f"Created tables: {missing}")
+#             else:
+#                 st.info("Schema already up-to-date ✔️")
+#         except Exception as e:
+#             st.error(f"Schema init failed: {e}")
+#     if st.sidebar.button("🛠 Build binary now"):
+#         try:
+#             path = ensure_mcmc_binary(src_dir="..")
+#             st.success(f"Built: {path}")
+#         except Exception as e:
+#             st.error(f"Build failed: {e}")
