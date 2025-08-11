@@ -226,3 +226,19 @@ if st.session_state.simulation_done:
     render_plot_snippet()
     if st.button("Generate Plots with Errorbars"):
         plot_with_errorbars(analysis_models, L, steps, temperatures)
+
+from mcmc_tools.db.models import Simulation
+with st.expander("🔧 Diagnostics", expanded=False):
+    st.write({"SAFE_MODE": os.getenv("SAFE_MODE", "0")})
+    st.write("DB:", "✅ OK" if healthcheck() else "❌ FAIL")
+    try:
+        with get_session() as s:
+            n_sim = s.query(Simulation).count()
+        st.write(f"Simulations in DB: {n_sim}")
+    except Exception as e:
+        st.write(f"DB query error: {e}")
+
+    if st.button("Clear cache & reload"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
