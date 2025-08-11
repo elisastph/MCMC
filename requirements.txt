@@ -1,10 +1,2 @@
 -e .
-
-streamlit
-SQLAlchemy>=2.0
-psycopg2-binary
-python-dotenv
-pandas
-numpy
-plotly
-
+imageio
