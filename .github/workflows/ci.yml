@@ -31,9 +31,6 @@ jobs:
         pip install -r requirements.txt
         pip install pybind11 pytest numpy
 
-        # if you don’t have a requirements.txt yet, fallback:
-        # pip install streamlit numpy pandas sqlalchemy psycopg2-binary python-dotenv plotly imageio pytest
-
     - name: Build C++ (cmake)
       run: |
         mkdir -p build
@@ -41,6 +38,10 @@ jobs:
         cmake ..
         make -j
 
+    - name: Move Python Modules
+      run: |
+        cp build/*.so .
+        
     - name: Run Python tests
       env:
         DATABASE_URL: sqlite:///test_ci.db
