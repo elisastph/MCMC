@@ -41,8 +41,8 @@ jobs:
         cmake ..
         make -j
 
-    # - name: Run Python tests
-    #   env:
-    #     DATABASE_URL: sqlite:///test_ci.db
-    #   run: |
-    #     pytest -q --maxfail=1
+    - name: Run Python tests
+      env:
+        DATABASE_URL: sqlite:///test_ci.db
+      run: |
+        pytest -q --maxfail=1
