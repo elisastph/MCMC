@@ -49,7 +49,7 @@ Interactive Monte Carlo simulations (Ising, Clock, XY) in browser – powered by
 
 ## 📌 Tech Stack
 
-- **Core**: C++17, pybind11  
+- **Core**: C++, pybind11  
 - **Frontend**: Streamlit  
 - **Backend**: Python, NumPy, Plotly, SQLAlchemy  
 - **Database**: Supabase (Postgres)  
