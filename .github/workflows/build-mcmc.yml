@@ -11,47 +11,32 @@ jobs:
   build-manylinux2014:
     name: Build portable Linux binary (manylinux2014)
     runs-on: ubuntu-latest
-    container: quay.io/pypa/manylinux2014_x86_64:latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare toolchain
+      - name: Build inside manylinux2014 via Docker
         shell: bash
         run: |
-          yum -y install cmake make which
-          # moderner GCC:
-          source /opt/rh/devtoolset-10/enable || true
-          gcc --version || true
-          g++ --version || true
+          docker run --rm -v "$PWD":/work -w /work quay.io/pypa/manylinux2014_x86_64 bash -euxo pipefail -c '
+            yum -y install cmake make which
+            source /opt/rh/devtoolset-10/enable || true
+            mkdir -p build
+            cmake -S . -B build -G "Unix Makefiles" \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DCMAKE_CXX_FLAGS="-O3 -static-libstdc++ -static-libgcc" \
+                  -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc -s"
+            cmake --build build -j"$(nproc)"
 
-      - name: Configure (CMake)
-        shell: bash
-        run: |
-          mkdir -p build
-          cmake -S . -B build -G "Unix Makefiles" \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_FLAGS="-O3 -static-libstdc++ -static-libgcc" \
-                -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc -s"
+            mkdir -p dist
+            cp build/mcmc dist/mcmc   # <— falls dein Target anders heißt, hier anpassen
+            chmod +x dist/mcmc
+            tar -C dist -czf mcmc-linux-x86_64.tar.gz mcmc
+            sha256sum mcmc-linux-x86_64.tar.gz > mcmc-linux-x86_64.tar.gz.sha256
 
-      - name: Build
-        shell: bash
-        run: |
-          cmake --build build -j"$(nproc)"
-          file build/mcmc || true
-          # Prüfen, welche GLIBC-Symbole erwartet würden (sollte max. 2.17 sein)
-          strings -a build/mcmc | grep -E "GLIBC_|GLIBCXX_" | sort -u || true
-
-      - name: Package & checksum
-        shell: bash
-        run: |
-          mkdir -p dist
-          cp build/mcmc dist/mcmc
-          chmod +x dist/mcmc
-          tar -C dist -czf mcmc-linux-x86_64.tar.gz mcmc
-          sha256sum mcmc-linux-x86_64.tar.gz > mcmc-linux-x86_64.tar.gz.sha256
-          echo "SHA256:"
-          cat mcmc-linux-x86_64.tar.gz.sha256
+            echo "===== GLIBC/GLIBCXX symbols (nur Info) ====="
+            (strings -a build/mcmc | grep -E "GLIBC_|GLIBCXX_" | sort -u) || true
+          '
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -62,3 +47,6 @@ jobs:
             mcmc-linux-x86_64.tar.gz.sha256
           make_latest: true
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
