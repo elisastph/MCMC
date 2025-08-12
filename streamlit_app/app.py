@@ -1,8 +1,5 @@
+# app.py
 import os
-import sys
-import tarfile
-import hashlib
-import urllib.request
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,19 +12,15 @@ from sqlalchemy import text, inspect
 # ---- App config ----
 st.set_page_config(page_title="MCMC Dashboard", layout="wide")
 
-# ---- Release-Config aus ENV/Secrets ----
-OWNER   = os.getenv("MCMC_RELEASE_OWNER", "elisastph")
-REPO    = os.getenv("MCMC_RELEASE_REPO",  "MCMC")
-TAG     = os.getenv("MCMC_RELEASE_TAG",   "v0.1.2")
-ASSET   = os.getenv("MCMC_RELEASE_ASSET", "mcmc-linux-x86_64.tar.gz")
-SHA256  = os.getenv("MCMC_RELEASE_SHA256", "")  # optional checksum
-RELEASE_URL = f"https://github.com/{OWNER}/{REPO}/releases/download/{TAG}/{ASSET}"
+# ---- Pfade & Binary via Helper (einheitlich für Cloud & ECS) ----
+# Erstelle eine Datei binary_provider.py wie vorgeschlagen (get_mcmc_path, get_paths)
+from binary_provider import get_mcmc_path, get_paths
 
-# ---- Persistente Verzeichnisse (nicht im Repo!) ----
-DATA_DIR     = Path(os.getenv("MCMC_DATA_DIR", "/mount/data/mcmc"))
-BIN_DIR      = DATA_DIR / "bin"
-RESULTS_DIR  = DATA_DIR / "results"
-ANALYSIS_DIR = DATA_DIR / "analysis_results" / "visualize_lattice"
+paths = get_paths()
+DATA_DIR     = paths["DATA_DIR"]
+BIN_DIR      = paths["BIN_DIR"]
+RESULTS_DIR  = paths["RESULTS_DIR"]
+ANALYSIS_DIR = paths["ANALYSIS_DIR"]
 for p in (BIN_DIR, RESULTS_DIR, ANALYSIS_DIR):
     p.mkdir(parents=True, exist_ok=True)
 
@@ -38,13 +31,10 @@ from infos import (
     render_gif_snippet,
     render_plot_snippet,
 )
-
 from mcmc_tools.db.models import Base  # enthält Simulation, Result, Lattice, Statistic
 from mcmc_tools.db import get_engine, get_session, healthcheck
 from mcmc_tools.db.etl import import_all_from_results_folder
-
 from mcmc_tools.analysis_utils.visualize_lattices import (
-    load_lattices_for_model_and_temperature,
     generate_and_display_lattice_animations,
 )
 from mcmc_tools.analysis_utils.stat_runner import analyze_and_store_latest_statistics
@@ -75,55 +65,14 @@ SAFE = str(os.getenv("SAFE_MODE", "0")).lower() in {"1", "true", "yes"}
 MAX_STEPS = 20_000 if SAFE else 100_000
 MAX_L     = 32     if SAFE else 128
 
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
 @st.cache_resource
-def ensure_mcmc_binary() -> Path:
-    """
-    Lädt den MCMC-Binary aus dem GitHub-Release in /mount/data/mcmc/bin
-    und macht ihn ausführbar. Optional: SHA256-Check.
-    """
-    exe = BIN_DIR / "mcmc"
-    if exe.exists() and os.access(exe, os.X_OK):
-        return exe
+def _engine_cached():
+    return get_engine()
 
-    BIN_DIR.mkdir(parents=True, exist_ok=True)
-    tar_path = BIN_DIR / "mcmc.tar.gz"
+engine = _engine_cached()
 
-    try:
-        # Download
-        with urllib.request.urlopen(RELEASE_URL) as r, tar_path.open("wb") as f:
-            f.write(r.read())
-
-        # Optional: Checksum
-        if SHA256:
-            got = _sha256(tar_path)
-            if got.lower() != SHA256.lower():
-                tar_path.unlink(missing_ok=True)
-                raise RuntimeError(f"SHA256 mismatch: expected {SHA256}, got {got}")
-
-        # Extract
-        with tarfile.open(tar_path, "r:gz") as tf:
-            tf.extractall(BIN_DIR)
-
-        exe.chmod(0o755)
-        tar_path.unlink(missing_ok=True)
-
-        if not exe.exists():
-            raise FileNotFoundError("mcmc not found after extraction")
-
-        return exe
-
-    except Exception as e:
-        raise FileNotFoundError(
-            f"Could not obtain mcmc binary from {RELEASE_URL}. "
-            f"Set MCMC_RELEASE_* secrets or pre-provision /mount/data/mcmc/bin/mcmc. Error: {e}"
-        )
+if os.getenv("INIT_DB", "0") in {"1", "true", "yes"}:
+    Base.metadata.create_all(engine)
 
 def ensure_schema():
     insp = inspect(engine)
@@ -133,14 +82,6 @@ def ensure_schema():
     if missing:
         Base.metadata.create_all(engine)
     return missing
-
-@st.cache_resource
-def _engine_cached():
-    return get_engine()
-
-engine = _engine_cached()
-if os.getenv("INIT_DB", "0") in {"1", "true", "yes"}:
-    Base.metadata.create_all(engine)
 
 def get_available_temperatures_and_models():
     with engine.connect() as conn:
@@ -226,6 +167,7 @@ if SAFE:
         "You can still visualize and analyze existing results."
     )
 
+
 # =========================
 # Simulation starten
 # =========================
@@ -233,7 +175,8 @@ if SAFE:
 start_pressed = st.sidebar.button("🚀 Start Simulation", disabled=SAFE)
 
 if start_pressed and not SAFE:
-    mcmc_path = ensure_mcmc_binary()
+    # Holt entweder den vorinstallierten Binary (MCMC_PATH) oder lädt das Release-Asset
+    mcmc_path = get_mcmc_path()
 
     st.session_state.simulation_started_once = True
     st.session_state.simulation_running = True
@@ -253,7 +196,7 @@ if start_pressed and not SAFE:
     current = 0
     success = True
 
-    # Wichtiger Unterschied: cwd = DATA_DIR, damit Binary in /mount/data/mcmc/results schreibt
+    # Wichtig: cwd = DATA_DIR, damit das Binary in DATA_DIR/results schreibt
     for T in temperatures:
         for model in models:
             cmd = [
@@ -268,7 +211,7 @@ if start_pressed and not SAFE:
                     cmd, check=True, capture_output=True, text=True,
                     cwd=str(DATA_DIR)
                 )
-                # Optional: Debug-Ausgabe anzeigen
+                # Debug-Ausgabe optional
                 # st.write(completed.stdout)
             except subprocess.CalledProcessError as e:
                 st.error(f"❌ Error for {model}, T={T:.2f}: {e.stderr.strip()}")
@@ -286,7 +229,7 @@ if start_pressed and not SAFE:
     # ---- Neue Ergebnisse in DB importieren ----
     n_simulations = len(models) * len(temperatures)
     import_all_from_results_folder(
-        folder=str(RESULTS_DIR),  # <— wichtig: nicht ins Repo
+        folder=str(RESULTS_DIR),  # <— wichtig: nicht ins Repo schreiben
         models=models,
         L=L,
         temperatures=temperatures,
@@ -351,14 +294,11 @@ if st.session_state.simulation_done:
 #         st.write(f"Simulations in DB: {n_sim}")
 #     except Exception as e:
 #         st.write(f"DB query error: {e}")
-#
 #     st.write({"DATA_DIR": str(DATA_DIR), "RESULTS_DIR": str(RESULTS_DIR), "BIN_DIR": str(BIN_DIR)})
-#
 #     if st.button("Clear cache & reload"):
 #         st.cache_data.clear()
 #         st.cache_resource.clear()
 #         st.rerun()
-#
 #     if st.button("Initialize DB schema (create tables)"):
 #         try:
 #             missing = ensure_schema()
