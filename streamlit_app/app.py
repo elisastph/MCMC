@@ -1,5 +1,16 @@
 import streamlit as st
+import os, pathlib, hashlib, tarfile, urllib.request
+
 st.set_page_config(page_title="MCMC Dashboard", layout="wide")
+
+OWNER   = os.getenv("MCMC_RELEASE_OWNER", "elisastph")
+REPO    = os.getenv("MCMC_RELEASE_REPO",  "MCMC")
+TAG     = os.getenv("MCMC_RELEASE_TAG",   "v0.1.2")
+ASSET   = os.getenv("MCMC_RELEASE_ASSET", "mcmc-linux-x86_64.tar.gz")
+SHA256  = os.getenv("MCMC_RELEASE_SHA256", "")
+
+RELEASE_URL = f"https://github.com/{OWNER}/{REPO}/releases/download/{TAG}/{ASSET}"
+
 from sqlalchemy import text, inspect
 import shutil
 import numpy as np
@@ -45,26 +56,50 @@ SAFE = str(os.getenv("SAFE_MODE", "0")).lower() in {"1", "true", "yes"}
 # Sanfte Limits in der Cloud
 MAX_STEPS = 20_000 if SAFE else 100_000
 MAX_L     = 32     if SAFE else 128
+def _sha256(path: pathlib.Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-def ensure_mcmc_binary():
+@st.cache_resource
+def ensure_mcmc_binary() -> pathlib.Path:
     exe = pathlib.Path("bin/mcmc")
-    if exe.exists():
-        return
+    if exe.exists() and os.access(exe, os.X_OK):
+        return exe
+
     exe.parent.mkdir(parents=True, exist_ok=True)
-    # schlanker Fallback-Download ohne Build
+    tar_path = pathlib.Path("bin/mcmc.tar.gz")
+
     try:
-        tar_path = pathlib.Path("mcmc.tar.gz")
-        # Streamlit Cloud hat kein curl? Dann python-urllib nehmen:
-        res = subprocess.run(
-            ["bash", "-lc", f'curl -L -o "{tar_path}" "{RELEASE_URL}"'],
-            check=True, capture_output=True, text=True
-        )
-        subprocess.run(["tar", "-xzf", str(tar_path), "-C", "bin"], check=True)
-        subprocess.run(["chmod", "+x", "bin/mcmc"], check=True)
+        # Download
+        with urllib.request.urlopen(RELEASE_URL) as r, tar_path.open("wb") as f:
+            f.write(r.read())
+
+        # Optional: Checksum
+        if SHA256:
+            got = _sha256(tar_path)
+            if got.lower() != SHA256.lower():
+                tar_path.unlink(missing_ok=True)
+                raise RuntimeError(f"SHA256 mismatch: expected {SHA256}, got {got}")
+
+        # Extract
+        with tarfile.open(tar_path, "r:gz") as tf:
+            tf.extractall(exe.parent)
+
+        exe.chmod(0o755)
         tar_path.unlink(missing_ok=True)
+
+        if not exe.exists():
+            raise FileNotFoundError("mcmc not found after extraction")
+
+        return exe
+
     except Exception as e:
         raise FileNotFoundError(
-            f"Could not obtain mcmc binary. Set MCMC_RELEASE_URL or commit bin/mcmc. Error: {e}"
+            f"Could not obtain mcmc binary from {RELEASE_URL}. "
+            f"Set MCMC_RELEASE_* secrets or commit bin/mcmc. Error: {e}"
         )
 
 def ensure_schema():
@@ -172,7 +207,7 @@ if SAFE:
 start_pressed = st.sidebar.button("🚀 Start Simulation", disabled=SAFE)
 # ---- Simulation starten ----
 if start_pressed and not SAFE:
-    ensure_mcmc_binary()
+    mcmc_path = ensure_mcmc_binary()
 
     st.session_state.simulation_started_once = True
     st.session_state.simulation_running = True
@@ -194,13 +229,7 @@ if start_pressed and not SAFE:
     
     for T in temperatures:
         for model in models:
-            cmd = [
-                "bin/mcmc",
-                "--model", model,
-                "--L", str(L),
-                "--T", f"{T:.2f}",
-                "--steps", str(steps)
-            ]
+            cmd = [str(mcmc_path), "--model", model, "--L", str(L), "--T", f"{T:.2f}", "--steps", str(steps)]
             try:
                 print(T, model)
                 subprocess.run(cmd, check=True, capture_output=True, text=True)

@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Nur lokal verwenden, wenn du wirklich die C++-Bindings bauen willst:
+# Nur lokal verwenden für die C++-Bindings:
 native = ["pybind11>=2.12", "cmake>=3.18"]
 dev = ["pytest>=7"]
 
