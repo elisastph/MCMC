@@ -5,7 +5,7 @@ import shutil
 import numpy as np
 from dotenv import load_dotenv
 from infos import render_models_intro, render_analysis_intro, render_gif_snippet, render_plot_snippet
-import os, subprocess, pathlib
+import os, subprocess, pathlib, sys
 from mcmc_tools.db.models import Base  # enthält Simulation, Result, Lattice, Statistic
 
 from mcmc_tools.db import get_engine, get_session, healthcheck
@@ -17,6 +17,12 @@ from mcmc_tools.analysis_utils.visualize_lattices import (
 )
 from mcmc_tools.analysis_utils.stat_runner import analyze_and_store_latest_statistics
 from mcmc_tools.analysis_utils.plots import plot_with_errorbars
+
+RELEASE_URL = os.getenv(
+    "MCMC_RELEASE_URL",
+    "https://github.com/elisastph/MCMC/releases/download/v0.1.2/mcmc-linux-x86_64.tar.gz"
+)
+
 
 def load_config(keys=("DATABASE_URL", "SAFE_MODE")):
     # 1) Wenn ENV schon gesetzt ist, nie überschreiben
@@ -42,8 +48,24 @@ MAX_L     = 32     if SAFE else 128
 
 def ensure_mcmc_binary():
     exe = pathlib.Path("bin/mcmc")
-    if not exe.exists():
-        raise FileNotFoundError("MCMC binary missing. Deploy a prebuilt binary (see Releases).")
+    if exe.exists():
+        return
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    # schlanker Fallback-Download ohne Build
+    try:
+        tar_path = pathlib.Path("mcmc.tar.gz")
+        # Streamlit Cloud hat kein curl? Dann python-urllib nehmen:
+        res = subprocess.run(
+            ["bash", "-lc", f'curl -L -o "{tar_path}" "{RELEASE_URL}"'],
+            check=True, capture_output=True, text=True
+        )
+        subprocess.run(["tar", "-xzf", str(tar_path), "-C", "bin"], check=True)
+        subprocess.run(["chmod", "+x", "bin/mcmc"], check=True)
+        tar_path.unlink(missing_ok=True)
+    except Exception as e:
+        raise FileNotFoundError(
+            f"Could not obtain mcmc binary. Set MCMC_RELEASE_URL or commit bin/mcmc. Error: {e}"
+        )
 
 def ensure_schema():
     eng = engine
