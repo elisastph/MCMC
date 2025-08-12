@@ -58,8 +58,6 @@ def create_engine_for_env():
         future=True,
         pool_pre_ping=True,
         poolclass=NullPool if use_null_pool else None,
-        executemany_mode="values",
-        executemany_values_page_size=int(os.getenv("EXECUTEMANY_PAGE", "1000")),
     )
 
     # SQLite: Foreign Keys aktivieren
@@ -80,14 +78,7 @@ def get_engine():
         _engine = create_engine_for_env()
     return _engine
 
-from sqlalchemy.orm import sessionmaker
-SessionLocal = sessionmaker(
-    bind=get_engine(),
-    autoflush=False,
-    autocommit=False,
-    expire_on_commit=False,   # <- neu
-    future=True
-)
+SessionLocal = sessionmaker(bind=get_engine(), autoflush=False, autocommit=False, future=True)
 
 @contextmanager
 def get_session():
@@ -100,7 +91,6 @@ def get_session():
         raise
     finally:
         session.close()
-
 
 def healthcheck() -> bool:
     from sqlalchemy import text

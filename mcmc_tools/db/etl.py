@@ -6,7 +6,6 @@ import re
 import io
 import base64
 from typing import List, Tuple, Optional, Sequence, Set
-from sqlalchemy import insert
 
 import numpy as np
 import pandas as pd
@@ -42,44 +41,19 @@ def import_simulation_with_lattices(filepath: str) -> int:
     """
     Liest eine CSV (results_...csv) + passende lattice_...csv Dateien und schreibt 1 Simulation.
     Gibt die neue Simulation-ID zurück (oder -1 bei Fehler).
-
-    Performance-Optimierungen:
-      - schnelles CSV-Parsing (usecols, dtype)
-      - Bulk-Insert für 'results' (batched)
-      - Bulk-Insert für 'lattices' (batched)
     """
     print(f"\n🔍 Verarbeite Datei: {filepath}")
     fname = os.path.basename(filepath)
     model, L, T = parse_filename(fname)  # erwartet results_<MODEL>_L<L>_T<temp>.csv
 
-    # Results einlesen (schneller & sparsamer)
-    try:
-        df = pd.read_csv(
-            filepath,
-            usecols=[
-                "step", "energy", "magnetization", "energy_squared", "magnetization_squared"
-            ],
-            dtype={
-                "step": "int32",
-                "energy": "float32",
-                "magnetization": "float32",
-                "energy_squared": "float32",
-                "magnetization_squared": "float32",
-            },
-            engine="c",
-        )
-    except Exception as e:
-        print(f"❌ Fehler beim Lesen von {filepath}: {e}")
-        return -1
-
+    # Results einlesen
+    df = pd.read_csv(filepath)
     if "step" not in df.columns:
         raise ValueError("results CSV fehlt 'step' Spalte.")
-
-    # einheitliche Sortierung & Dubletten weg
     df = df.sort_values("step").drop_duplicates(subset=["step"])
 
     with get_session() as session:
-        # Hinweis, falls bereits eine Simulation existiert (reine Infoausgabe)
+        # Hinweis, falls es schon eine Simulation mit gleichen Eckdaten gibt
         existing_sim = (
             session.query(Simulation)
             .filter(
@@ -97,7 +71,7 @@ def import_simulation_with_lattices(filepath: str) -> int:
                 .count()
             )
             print(
-                f"ℹ️ Es existiert bereits sim_id={existing_sim.id} "
+                f"ℹ️ Hinweis: Es existiert bereits sim_id={existing_sim.id} "
                 f"für (model={model}, T={T:.2f}, L={L}) mit {n_existing} Steps. "
                 f"Importiere trotzdem eine NEUE Simulation."
             )
@@ -113,54 +87,43 @@ def import_simulation_with_lattices(filepath: str) -> int:
         session.flush()  # sim.id verfügbar
         print(f"➡️ Neue Simulation: ID={sim.id}, Model={model}, T={T:.2f}, L={L}, Steps={len(df)}")
 
-        # -------- Results: BULK INSERT (batched) --------
-        BATCH = 5000  # ggf. anpassen
-        results_rows = [
-            {
-                "simulation_id": sim.id,
-                "step": int(row.step),
-                "energy": float(row.energy),
-                "magnetization": float(row.magnetization),
-                "energy_squared": float(row.energy_squared),
-                "magnetization_squared": float(row.magnetization_squared),
-            }
-            for row in df.itertuples(index=False)
+        # Results speichern
+        res_rows: List[Result] = [
+            Result(
+                simulation_id=sim.id,
+                step=int(r["step"]),
+                energy=float(r["energy"]),
+                magnetization=float(r["magnetization"]),
+                energy_squared=float(r["energy_squared"]),
+                magnetization_squared=float(r["magnetization_squared"]),
+            )
+            for _, r in df.iterrows()
         ]
+        session.add_all(res_rows)
 
-        for k in range(0, len(results_rows), BATCH):
-            session.execute(insert(Result), results_rows[k : k + BATCH])
-            # flush für geringeren Memory-Footprint (commit am Ende via Context-Manager)
-            session.flush()
-
-        # -------- Lattice-Dateien importieren (BULK) --------
+        # -------- Lattice-Dateien importieren --------
         lattice_dir = os.path.dirname(filepath)
         t_str = f"{T:.2f}"
 
         # Neues Muster (mit L)
         pattern_new = rf"lattice_{re.escape(model)}_L{int(L)}_T{re.escape(t_str)}_\d+\.csv"
-        lattice_files = sorted(
-            f for f in os.listdir(lattice_dir) if re.fullmatch(pattern_new, f)
-        )
+        lattice_files = sorted(f for f in os.listdir(lattice_dir) if re.fullmatch(pattern_new, f))
 
-        # Fallback: altes Muster (ohne L)
+        # Fallback: altes Muster (ohne L), falls nichts gefunden
         used_pattern = "new"
         if not lattice_files:
             pattern_old = rf"lattice_{re.escape(model)}_T{re.escape(t_str)}_\d+\.csv"
-            lattice_files = sorted(
-                f for f in os.listdir(lattice_dir) if re.fullmatch(pattern_old, f)
-            )
+            lattice_files = sorted(f for f in os.listdir(lattice_dir) if re.fullmatch(pattern_old, f))
             used_pattern = "old"
         print(f"🧭 Lattice-Muster benutzt: {used_pattern} | Dateien gefunden: {len(lattice_files)}")
 
         # Vorhandene Steps in dieser Simulation (Duplikate vermeiden)
         existing_steps = set(
-            r[0]
-            for r in session.query(Lattice.step)
-            .filter(Lattice.simulation_id == sim.id)
-            .all()
+            r[0] for r in session.query(Lattice.step)
+                                 .filter(Lattice.simulation_id == sim.id)
+                                 .all()
         )
 
-        lattice_rows = []
         total_lattices = 0
         skipped_shape = 0
         skipped_dupe = 0
@@ -190,28 +153,17 @@ def import_simulation_with_lattices(filepath: str) -> int:
                 continue
 
             encoded = array_to_base64(data)
-            lattice_rows.append(
-                {
-                    "simulation_id": sim.id,
-                    "model": model,
-                    "temperature": float(T),
-                    "step": step,
-                    "data": encoded,
-                }
+            session.add(
+                Lattice(
+                    simulation_id=sim.id,
+                    model=model,
+                    temperature=float(T),
+                    step=step,
+                    data=encoded,
+                )
             )
             existing_steps.add(step)
             total_lattices += 1
-
-            # optional: auch bei Lattices batched schreiben
-            if len(lattice_rows) >= BATCH:
-                session.execute(insert(Lattice), lattice_rows)
-                session.flush()
-                lattice_rows.clear()
-
-        # Rest flushen
-        if lattice_rows:
-            session.execute(insert(Lattice), lattice_rows)
-            session.flush()
 
         print(
             f"🧩 Lattices: imported={total_lattices}, "
@@ -220,6 +172,7 @@ def import_simulation_with_lattices(filepath: str) -> int:
 
         # Commit durch Context-Manager
         return sim.id
+
 
 
 # -------- Bulk import --------
