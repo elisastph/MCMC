@@ -1,6 +1,6 @@
 # MCMC Simulator Dashboard
 
-Interactive Monte Carlo simulations (Ising, Clock, XY) in your browser – powered by a C++ core, Python pipelines, a Streamlit frontend, and a Supabase database.
+Interactive Monte Carlo simulations (Ising, Clock, XY) in browser – powered by a C++ core, Python pipelines, a Streamlit frontend, and a Supabase database.
 
 **🎯 Live Demo:** [Click here to launch the app](<https://a9hrzvqsl5gvz5ps7btra7.streamlit.app>)
 
@@ -42,22 +42,6 @@ Interactive Monte Carlo simulations (Ising, Clock, XY) in your browser – power
 
 ---
 
-## 🛠 Architecture Overview
-
-```mermaid
-flowchart LR
-    subgraph User
-    A[Browser] -->|Streamlit UI| B[Streamlit Server]
-    end
-
-    subgraph Backend
-    B -->|Parameters| C[C++ Core via pybind11]
-    C -->|Raw Data| D[Python Analysis Pipeline]
-    end
-
-    D -->|Results| E[Supabase DB]
-    E -->|Plots/GIFs| B
-
 - C++ core: Efficient update kernels for Ising, Clock, and XY models
 - Python pipeline: Statistical analysis, visualization, and export
 - Streamlit frontend: Interactive configuration and display
@@ -70,3 +54,33 @@ flowchart LR
 - **Backend**: Python, NumPy, Plotly, SQLAlchemy  
 - **Database**: Supabase (Postgres)  
 - **CI/CD**: GitHub Actions (build, test)
+
+
+# 1) Clone the repository
+git clone https://github.com/<your-user>/<repo>.git
+cd <repo>
+
+# 2) Create a virtual environment
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+
+# 3) Install dependencies
+pip install -r requirements.txt
+
+# 4) Install mcmc_tools (if in repo)
+pip install -e ./mcmc_tools
+
+# 5) Build the C++ core
+mkdir -p build && cd build
+cmake -DPython3_EXECUTABLE="$(which python)" -DCMAKE_BUILD_TYPE=Release ..
+make -j
+cd ..
+export PYTHONPATH="$PWD/build:$PWD"
+
+# 6) Set environment variables
+export DATABASE_URL="postgresql+psycopg2://<user>:<pass>@<host>:<port>/<db>"
+export SAFE_MODE="1"
+
+# 7) Run the app
+streamlit run app.py
