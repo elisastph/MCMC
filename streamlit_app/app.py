@@ -195,7 +195,7 @@ if start_pressed and not SAFE:
     for T in temperatures:
         for model in models:
             cmd = [
-                "build/mcmc",
+                "bin/mcmc",
                 "--model", model,
                 "--L", str(L),
                 "--T", f"{T:.2f}",
