@@ -18,10 +18,20 @@ from mcmc_tools.analysis_utils.visualize_lattices import (
 from mcmc_tools.analysis_utils.stat_runner import analyze_and_store_latest_statistics
 from mcmc_tools.analysis_utils.plots import plot_with_errorbars
 
-for key in ("DATABASE_URL", "SAFE_MODE"):
-    if key in st.secrets and st.secrets[key]:
-        os.environ[key] = str(st.secrets[key])
+def load_config(keys=("DATABASE_URL", "SAFE_MODE")):
+    # 1) Wenn ENV schon gesetzt ist, nie überschreiben
+    for k in keys:
+        if os.getenv(k):
+            continue
+        # 2) Nur versuchen, st.secrets zu lesen, wenn vorhanden
+        try:
+            if k in st.secrets and st.secrets[k]:
+                os.environ[k] = str(st.secrets[k])
+        except Exception:
+            # Kein secrets.toml vorhanden – macht nichts
+            pass
 
+load_config()
 load_dotenv()
 
 SAFE = str(os.getenv("SAFE_MODE", "0")).lower() in {"1", "true", "yes"}
