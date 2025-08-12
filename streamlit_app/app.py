@@ -41,14 +41,9 @@ MAX_STEPS = 20_000 if SAFE else 100_000
 MAX_L     = 32     if SAFE else 128
 
 def ensure_mcmc_binary():
-    build_dir = pathlib.Path("build")
-    exe = build_dir / "mcmc"
-    if exe.exists():
-        return
-    build_dir.mkdir(exist_ok=True)
-    # Build only if missing
-    subprocess.run(["cmake", ".."], cwd=build_dir, check=True)
-    subprocess.run(["make", "-j"], cwd=build_dir, check=True)
+    exe = pathlib.Path("bin/mcmc")
+    if not exe.exists():
+        raise FileNotFoundError("MCMC binary missing. Deploy a prebuilt binary (see Releases).")
 
 def ensure_schema():
     eng = engine
