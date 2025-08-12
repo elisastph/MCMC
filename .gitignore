@@ -9,3 +9,5 @@ results/
 save_for_later
 __pycache__/
 analysis_results/
+bin/
+docker-compose.yml
