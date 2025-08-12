@@ -5,36 +5,60 @@ on:
       - "v*"
 
 permissions:
-  contents: write   # ← wichtig, sonst kein Release
+  contents: write  # nötig für Release-Upload
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  build-manylinux2014:
+    name: Build portable Linux binary (manylinux2014)
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux2014_x86_64:latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build
+      - name: Prepare toolchain
+        shell: bash
+        run: |
+          yum -y install cmake make which
+          # moderner GCC:
+          source /opt/rh/devtoolset-10/enable || true
+          gcc --version || true
+          g++ --version || true
 
-      - name: Configure
+      - name: Configure (CMake)
+        shell: bash
         run: |
           mkdir -p build
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G "Unix Makefiles" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS="-O3 -static-libstdc++ -static-libgcc" \
+                -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc -s"
 
       - name: Build
-        run: cmake --build build -j4
+        shell: bash
+        run: |
+          cmake --build build -j"$(nproc)"
+          file build/mcmc || true
+          # Prüfen, welche GLIBC-Symbole erwartet würden (sollte max. 2.17 sein)
+          strings -a build/mcmc | grep -E "GLIBC_|GLIBCXX_" | sort -u || true
 
-      - name: Package
+      - name: Package & checksum
+        shell: bash
         run: |
           mkdir -p dist
           cp build/mcmc dist/mcmc
           chmod +x dist/mcmc
           tar -C dist -czf mcmc-linux-x86_64.tar.gz mcmc
+          sha256sum mcmc-linux-x86_64.tar.gz > mcmc-linux-x86_64.tar.gz.sha256
+          echo "SHA256:"
+          cat mcmc-linux-x86_64.tar.gz.sha256
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: mcmc-linux-x86_64.tar.gz
+          files: |
+            mcmc-linux-x86_64.tar.gz
+            mcmc-linux-x86_64.tar.gz.sha256
           make_latest: true
           generate_release_notes: true
